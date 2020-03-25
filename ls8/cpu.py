@@ -1,58 +1,79 @@
 """CPU functionality."""
 
 import sys
-import re
+
+#create instructions for LDI, PRN, HLT, and MUL programs
+LDI = 0b10000010
+PRN = 0b01000111
+HLT = 0b00000001
+MUL = 0b10100010
+PUSH = 0b01000101
+POP =  01000110
+
 
 class CPU:
     """Main CPU class."""
 
     def __init__(self):
         """Construct a new CPU."""
-        # general registers
-        self.reg = bytearray([0]*7 + [0xf4]) # [00,00,00,00,00,00,00,f4]
-        # memory
-        self.ram = bytearray(256)
-        # internal registers
-        self.pc = 0 # Program Counter: address of the currently executing instruction
-        self.mar = 0 # Memory Address Register: holds the memory address we're reading or writing
-        self.mdr = 0 # Memory Data Register: holds the value to write or the value just read
-        self.fl = 0 # Flags: 00000LGE; L: less than, G: Greater than, E: Equal
-    
-    def ram_read(self, address):
-        """Accepts an address to read and returns the value stored there."""
-        self.mar = address
-        self.mdr = self.ram[self.mar]
-        return self.mdr
+        # setup ram, register, and pc
+        self.ram = [0] * 256
+        self.register = [0] * 8
+        self.pc = 0
+        self.branchtable = {}
+        self.branchtable[HLT] = self.handle_hlt
+        self.branchtable[LDI] = self.handle_ldi
+        self.branchtable[PRN] = self.handle_prn
+        self.branchtable[MUL] = self.handle_mul
+        self.halted = False
 
-    def raw_write(self, value, address):
-        """Accepts a value and address to write the value to."""
-        self.mdr = value
-        self.mar = address
-        self.ram[self.mar] = self.mdr
-
-    def load(self, path):
+    def load(self):
         """Load a program into memory."""
 
+        if len(sys.argv) != 2:
+            print("format: ls8.py [filename]")
+            sys.exit(1)
+
+        program = sys.argv[1]
         address = 0
 
-        with open(path) as f:
-            program = f.read()
-            program = re.findall('^[01]{8}', program, re.MULTILINE)
-            program = map(lambda code: int(code, 2), program)
+        # For now, we've just hardcoded a program:
 
-        for instruction in program:
-            self.ram[address] = instruction
-            address += 1
+        # program = [
+        #     # From print8.ls8
+        #     0b10000010, # LDI R0,8
+        #     0b00000000,
+        #     0b00001000,
+        #     0b01000111, # PRN R0
+        #     0b00000000,
+        #     0b00000001,  # HLT
+        # ]
+
+        #open file
+        with open(program) as file:
+            #read the lines
+            for line in file:
+                #parse out comments
+                line = line.strip().split("#")[0]
+                #cast numbers from strings to ints
+                val = line.strip()
+                #ignore blank lines
+                if line == "":
+                    continue
+
+                value = int(val, 2)
+                self.ram[address] =     value
+                address +=1
+        
 
 
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
-        MUL = 0b0010
 
         if op == "ADD":
             self.reg[reg_a] += self.reg[reg_b]
-        elif op == MUL:
-            self.reg[reg_a] *= self.reg[reg_b]
+        elif op == "MUL":
+            self.register[reg_a] *= self.register[reg_b]
         else:
             raise Exception("Unsupported ALU operation")
 
@@ -77,31 +98,83 @@ class CPU:
         print()
 
     def run(self):
-        HLT = 0b0001
-        LDI = 0b0010
-        PRN = 0b0111
         """Run the CPU."""
-        while True:
-            ir = self.ram_read(self.pc) # Instruction Register: contains a copy of the currently executing instruction
-            operand_a = self.ram_read(self.pc + 1)
-            operand_b = self.ram_read(self.pc + 2)
+        
+        #set running to True
+        running = True
 
-            operands = (ir & 0b11000000) >> 6
-            alu_oper = (ir & 0b00100000) >> 5
-            sets_pc  = (ir & 0b00010000) >> 4
-            instr_id = (ir & 0b00001111)
+    #ram_read should accept an address to read and return the value
+    def ram_read(self, mar):
+        return self.ram[mar]
 
-            if not sets_pc:
-                self.pc += 1 + operands
+    #ram_write should accept a value to write, and the address to write it to
+    def ram_write(self, mdr, mar):
+        self.ram[mar] = mdr
 
-            if alu_oper:
-                self.alu(instr_id, operand_a, operand_b)
-            
-            elif instr_id == HLT:
-                break
+    
+    def handle_ldi(self):
+        operand_a = self.ram_read(self.pc + 1)
+        operand_b = self.ram_read(self.pc + 2)
+        
+        self.register[operand_a] = operand_b
 
-            elif instr_id == LDI:
-                self.reg[operand_a] = operand_b
+    def handle_prn(self):
+        operand_a = self.ram_read(self.pc + 1)
+        print(self.register[operand_a])
 
-            elif instr_id == PRN:
-                print(self.reg[operand_a])
+    def handle_hlt(self):
+        self.halted = True
+
+    def handle_mul(self):
+        operand_a = self.ram_read(self.pc + 1)
+        operand_b = self.ram_read(self.pc + 2)
+        self.alu("MUL", operand_a, operand_b)
+
+    def run(self):
+        while self.halted != True:
+            IR = self.ram[self.pc]
+            val = IR
+            op_count = val >> 6
+            IR_length = op_count + 1
+            self.branchtable[IR]()
+
+            if IR == 0 or None:
+                print(f"Unknown instructions and index {self.pc}")
+                sys.exit(1)
+            self.pc += IR_length
+
+
+
+        #####SAVED FOR POSTERITY#######
+
+        #while cpu is running
+        # while running:
+        #     #  set instruction register per step 3
+        #     IR = self.ram[self.pc]
+
+        #     # set operand_a to pc+1 per step 3
+        #     operand_a = self.ram_read(self.pc + 1)
+        #     # set operand_b to pc+2 per step 3
+        #     operand_b = self.ram_read(self.pc + 2)
+
+        #     # if the instruction register is LDI
+        #     if IR == LDI:
+        #         #set register of operand_a to operand_b, jump 3 in PC (to PRN currently)
+        #         self.register[operand_a] = operand_b
+        #         self.pc +=3
+
+        #     # if the instruction register is PRN
+        #     elif IR == PRN:
+        #         #print the register of operand_a, jump 2 in PC
+        #         print(self.register[operand_a])
+        #         self.pc +=2
+
+        #     # if the instruction register is the halt command
+        #     elif IR == HLT:
+        #         #set running to false and exit
+        #         running = False
+        #         sys.exit(0)
+        #     # if anything else, invalid command and quit with failure code 1
+        #     else:
+        #         print(f"Invalid Command: {self.ram[self.pc]}")
+        #         sys.exit(1)
