@@ -60,6 +60,8 @@ but you'll have to implement those three above instructions first!
 ## Step 0: IMPORTANT: inventory what is here!
 
 * Make a list of files here.
+1. ls8.py - this is the program we actually run, loads CPU and executes
+2. cpu.py - Build out the functionality of what the cpu does, ram, registers, loading, etc.
 * Write a short 3-10-word description of what each file does.
 * Note what has been implemented, and what hasn't.
 * Read this whole file.
